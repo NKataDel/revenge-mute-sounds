@@ -1,1 +1,1 @@
-{"name":"MuteSystemSounds","description":"Mutes Discord system sounds (mute/join/leave/deafen).","authors":[{"name":"NKataDel","id":"0"}],"main":"index.js","hash":"50d8190e98e12b4ff68bd5611ef6833ed83c16f43c69272b9c0e328645e3535e"}
+{"name":"MuteSystemSound","description":"Mutes Discord system sounds (mute/join/leave/deafen).","authors":[{"name":"NKataDel","id":"0"}],"main":"index.js","hash":"50d8190e98e12b4ff68bd5611ef6833ed83c16f43c69272b9c0e328645e3535e"}
