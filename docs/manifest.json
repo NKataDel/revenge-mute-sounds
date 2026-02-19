@@ -1,0 +1,8 @@
+{
+  "name": "Mute System Sounds",
+  "description": "Отключает системные звуки Discord",
+  "authors": [
+    { "name": "NKataDel", "id": "0" }
+  ],
+  "main": "plugin.js"
+}
