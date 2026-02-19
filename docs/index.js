@@ -1,86 +1,68 @@
 (function (i, _, p, w, S, n) {
   "use strict";
 
-  // Native Sound Manager (как в твоём рабочем примере)
-  const { DCDSoundManager } = _.ReactNative.NativeModules;
+  // В твоём примере "_" = vendetta.metro.common
+  const RN = _ && _.ReactNative;
+  const NativeModules = RN && RN.NativeModules;
+  const DCDSoundManager = NativeModules && NativeModules.DCDSoundManager;
 
-  // Patch API (у Vendetta/Revenge обычно есть)
-  const patcher = p.patcher || vendetta?.patcher || bunny?.patcher;
+  // если по какой-то причине модуля нет — плагин всё равно не должен падать
+  const original = {};
+  const METHODS = [
+    "play",
+    "playWithOptions",
+    "playSound",
+    "playSoundpack",
+    "playLocalSound",
+    "prepare",
+    "stop"
+  ];
 
-  // storage (чтобы можно было выключать)
-  const store = p.storage;
-  store.enabled ??= true;
+  function patch() {
+    if (!DCDSoundManager) return false;
 
-  const SOUND_ID_ANY = 6969; // просто id для совместимости, не обязателен
+    let patched = 0;
 
-  function patchMethod(obj, name) {
-    if (!obj || typeof obj[name] !== "function" || !patcher) return false;
+    for (const m of METHODS) {
+      if (typeof DCDSoundManager[m] === "function") {
+        // сохраняем оригинал один раз
+        if (!original[m]) original[m] = DCDSoundManager[m];
 
-    patcher.instead("mute-system-sounds", obj, name, (args, orig) => {
-      if (store.enabled) {
-        // глушим все системные звуки
-        return undefined;
+        // глушим проигрывание (и prepare тоже, чтобы ничего не подготавливалось)
+        DCDSoundManager[m] = function () {
+          // если хочешь НЕ глушить stop — можно убрать stop из METHODS
+          return undefined;
+        };
+
+        patched++;
       }
-      return orig(...args);
-    });
+    }
 
-    return true;
+    // Логи (если есть доступ к логам)
+    try { console.log("[MuteSystemSounds] patched:", patched, "keys:", Object.keys(DCDSoundManager)); } catch {}
+    return patched > 0;
   }
 
-  // UI settings (минимально)
-  function Settings() {
-    w.useProxy(p.storage);
-    return React.createElement(
-      n.General.ScrollView,
-      { style: { flex: 1 } },
-      React.createElement(
-        n.Forms.FormSection,
-        { title: "Mute System Sounds" },
-        React.createElement(n.Forms.FormSwitchRow, {
-          label: "Enabled",
-          subLabel: "Blocks Discord system sounds (mute/join/leave/deafen, etc.)",
-          value: !!store.enabled,
-          onValueChange: (v) => (store.enabled = v),
-        })
-      )
-    );
-  }
+  function unpatch() {
+    if (!DCDSoundManager) return;
 
-  let patched = 0;
+    for (const m of Object.keys(original)) {
+      try { DCDSoundManager[m] = original[m]; } catch {}
+    }
+
+    try { console.log("[MuteSystemSounds] unpatched"); } catch {}
+  }
 
   const index = {
     onLoad: () => {
-      // Сначала на всякий — снять старые патчи
-      try { patcher?.unpatchAll?.("mute-system-sounds"); } catch {}
-
-      // Патчим разные варианты методов, которые встречаются в разных версиях
-      patched = 0;
-      patched += patchMethod(DCDSoundManager, "play") ? 1 : 0;
-      patched += patchMethod(DCDSoundManager, "playWithOptions") ? 1 : 0;
-      patched += patchMethod(DCDSoundManager, "playSound") ? 1 : 0;
-      patched += patchMethod(DCDSoundManager, "playSoundpack") ? 1 : 0;
-      patched += patchMethod(DCDSoundManager, "playLocalSound") ? 1 : 0;
-
-      // Если ничего не пропатчилось, значит методы иначе называются — тогда нужен дамп ключей.
-      // Но в большинстве сборок play(...) есть.
-      if (patched === 0) {
-        // В эмуляторе тостов может не быть, поэтому просто лог
-        try { console.log("[MuteSystemSounds] No methods patched on DCDSoundManager", Object.keys(DCDSoundManager || {})); } catch {}
-      } else {
-        try { console.log("[MuteSystemSounds] patched methods:", patched); } catch {}
-      }
+      patch();
     },
-
     onUnload: () => {
-      try { patcher?.unpatchAll?.("mute-system-sounds"); } catch {}
-      try { console.log("[MuteSystemSounds] unpatched"); } catch {}
-    },
-
-    settings: Settings,
+      unpatch();
+    }
   };
 
   i.default = index;
-  i.settings = store;
   Object.defineProperty(i, "__esModule", { value: true });
   return i;
 
