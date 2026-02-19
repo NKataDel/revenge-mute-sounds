@@ -1,1 +1,1 @@
-{"name":"Mute System Sounds","description":"Отключает системные звуки Discord (mute/unmute/deafen и т.п.)","authors":[{"name":"NKataDel","id":"0"}],"main":"index.js","hash":"81275b54ddbe39e4e1c1d3ba656eec999017febc732ff8a203ab8d3534e904d5"}
+{"name":"MuteSystemSounds","description":"Mutes Discord system sounds (mute/join/leave/deafen).","authors":[{"name":"NKataDel","id":"0"}],"main":"index.js","hash":"97718b5d074079dc00366e3655b9e64f0f062049e7ab898a8eb53c9dacd92086"}
