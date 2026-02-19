@@ -1,102 +1,129 @@
-import definePlugin from "@utils/types";
-import { definePluginSettings } from "@api/Settings";
-import { OptionType } from "@utils/types";
-import { Patcher } from "@api/Patcher";
-import { findByProps, findByName } from "@webpack";
-import { Toasts } from "@webpack/common";
+(function () {
+  // Попытка достать API Revenge из глобалов (разные сборки — разные имена)
+  const rv =
+    globalThis.revenge ??
+    globalThis.Revenge ??
+    globalThis.vendetta ??
+    globalThis.Vendetta ??
+    globalThis.bunny ??
+    globalThis.Bunny;
 
-const settings = definePluginSettings({
-  enabled: {
-    type: OptionType.BOOLEAN,
-    description: "Глушить все системные звуки Discord (mute/unmute/deafen и т.п.)",
-    default: true,
-  },
-  debugToasts: {
-    type: OptionType.BOOLEAN,
-    description: "Показывать отладочные тосты",
-    default: false,
-  },
-});
-
-function safeToast(msg) {
-  try {
-    if (settings.store.debugToasts) Toasts.show?.(msg, 1);
-  } catch {}
-}
-
-function patchPlayMethods(mod, label) {
-  if (!mod) return 0;
-
-  const candidates = [
-    "playSound",
-    "playSoundpack",
-    "play",
-    "playAsync",
-    "playEffect",
-    "playUISound",
-    "playSystemSound",
-    "playLocalSound",
-    "playSoundIfEnabled",
-    "previewSound",
-  ];
-
-  let patched = 0;
-
-  for (const fn of candidates) {
-    if (typeof mod[fn] === "function") {
-      Patcher.instead(label, mod, fn, (args, original) => {
-        if (settings.store.enabled) return undefined;
-        return original(...args);
-      });
-      patched++;
-    }
+  if (!rv) {
+    // Нечего патчить, но хотя бы не падаем
+    console.log("[MuteSystemSounds] Revenge API not found");
+    return;
   }
 
-  return patched;
-}
+  const { plugins, metro, webpack } = rv;
 
-export default definePlugin({
-  name: "Mute System Sounds",
-  description: "Отключает системные звуки Discord (mute/unmute/deafen/camera on/off и т.п.)",
-  authors: [{ name: "NKataDel" }],
-  settings,
+  // На разных сборках это может лежать по-разному
+  const definePlugin = plugins?.definePlugin ?? plugins?.definePlugin?.default;
+  const Patcher = plugins?.patcher ?? plugins?.Patcher ?? rv.patcher;
+  const Toasts = webpack?.common?.Toasts ?? metro?.common?.Toasts;
 
-  onStart() {
-    let totalPatched = 0;
+  // Функции поиска модулей
+  const findByProps =
+    webpack?.findByProps ??
+    metro?.findByProps ??
+    rv.findByProps;
 
-    const byProps = [
-      findByProps("playSound", "preloadSound"),
-      findByProps("playSoundpack"),
-      findByProps("playSoundIfEnabled"),
-      findByProps("previewSound"),
-      findByProps("play", "stop"),
-    ].filter(Boolean);
+  const findByName =
+    webpack?.findByName ??
+    metro?.findByName ??
+    rv.findByName;
 
-    byProps.forEach((m, i) => {
-      totalPatched += patchPlayMethods(m, `MuteSystemSounds:props:${i}`);
-    });
+  function toast(msg) {
+    try {
+      Toasts?.show?.(msg, 1);
+    } catch {}
+  }
 
-    const byNames = ["SoundManager", "SoundPlayer", "Sounds", "AudioManager"]
-      .map((n) => {
-        try { return findByName(n, false); } catch { return null; }
-      })
-      .filter(Boolean);
+  // Уникальный ключ, чтобы можно было unpatchAll
+  const PATCH_KEY = "MuteSystemSounds";
 
-    byNames.forEach((m, i) => {
-      totalPatched += patchPlayMethods(m, `MuteSystemSounds:name:${i}`);
-    });
+  function patchPlayMethods(mod) {
+    if (!mod || !Patcher) return 0;
 
-    safeToast(`MuteSystemSounds: patched=${totalPatched}`);
+    const candidates = [
+      "playSound",
+      "playSoundpack",
+      "play",
+      "playAsync",
+      "playEffect",
+      "playUISound",
+      "playSystemSound",
+      "playLocalSound",
+      "playSoundIfEnabled",
+      "previewSound",
+      "enqueueSound",
+      "playClip",
+    ];
 
-    if (totalPatched === 0) {
-      Toasts.show?.("MuteSystemSounds: не нашёл sound-модуль (нужна другая версия поиска).", 1);
-    } else {
-      Toasts.show?.("Системные звуки заглушены 🔇", 1);
+    let patched = 0;
+
+    for (const fn of candidates) {
+      if (typeof mod[fn] === "function") {
+        try {
+          Patcher.instead(PATCH_KEY, mod, fn, () => undefined);
+          patched++;
+        } catch {}
+      }
     }
-  },
 
-  onStop() {
-    Patcher.unpatchAll("MuteSystemSounds");
-    Toasts.show?.("Системные звуки возвращены 🔊", 1);
-  },
-});
+    return patched;
+  }
+
+  const plugin = {
+    name: "Mute System Sounds",
+    description: "Отключает системные звуки Discord (mute/unmute/deafen/camera on/off и т.п.)",
+    authors: [{ name: "NKataDel" }],
+
+    onStart() {
+      let total = 0;
+
+      const tries = [
+        () => findByProps?.("playSound", "preloadSound"),
+        () => findByProps?.("playSoundpack"),
+        () => findByProps?.("playSoundIfEnabled"),
+        () => findByProps?.("previewSound"),
+        () => findByProps?.("play", "stop"),
+      ];
+
+      for (const t of tries) {
+        try {
+          const m = t();
+          if (m) total += patchPlayMethods(m);
+        } catch {}
+      }
+
+      const names = ["SoundManager", "SoundPlayer", "Sounds", "AudioManager"];
+      for (const n of names) {
+        try {
+          const m = findByName?.(n, false);
+          if (m) total += patchPlayMethods(m);
+        } catch {}
+      }
+
+      if (total > 0) toast("Системные звуки заглушены 🔇");
+      else toast("MuteSystemSounds: модуль звуков не найден (нужно подстроить поиск).");
+    },
+
+    onStop() {
+      try {
+        Patcher?.unpatchAll?.(PATCH_KEY);
+      } catch {}
+      toast("Системные звуки возвращены 🔊");
+    },
+  };
+
+  // Экспорт для разных загрузчиков
+  if (typeof module !== "undefined" && module.exports) module.exports = plugin;
+  else globalThis.__revenge_plugin__ = plugin;
+
+  // Если есть definePlugin — оборачиваем
+  if (typeof definePlugin === "function") {
+    const wrapped = definePlugin(plugin);
+    if (typeof module !== "undefined" && module.exports) module.exports = wrapped;
+    else globalThis.__revenge_plugin__ = wrapped;
+  }
+})();
